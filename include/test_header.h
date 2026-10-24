@@ -1,8 +1,12 @@
 #pragma once
 
-void my_swap(int& a, int& b)
+#include <cstdint>
+#include "ints.h"
+
+/// Helper to swap two integers.
+void my_swap(U32& a, U32& b)
 {
-    int tmp = a;
+    U32 tmp = a;
     a = b;
     b = tmp;
 }
