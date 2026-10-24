@@ -13,13 +13,13 @@ M-x , // Go back to where you were
 
 I32 main() {
     printf("Before...\n");
-    BitArray<72> bitarr;
+    BitArray<76> bitarr;
     bitarr.print();    
     bitarr.SetBit(63);
     bitarr.SetBit(64);
     bitarr.print();
-    bitarr.ShiftDown(1);
+    bitarr.ShiftDown(true);
     bitarr.print();
-    bitarr.ShiftUp(1);
+    bitarr.ShiftUp(true);
     bitarr.print();
 }

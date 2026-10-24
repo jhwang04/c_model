@@ -5,7 +5,9 @@
 #include <string>
 
 /// Helper class to store an array of bits compactly.
+/// Size n must be a multiple of 4.
 template <U64 n> class BitArray {
+    static_assert(n % 4 == 0);
  public:  
     /// Guaranteed to be large enough. May have padding.
     static constexpr U64 backing_size = (n / 64) + 1;
@@ -44,10 +46,10 @@ template <U64 n> class BitArray {
     constexpr void ShiftUp(bool in) {
         for (U64 i = backing_size - 1; i > 0; --i) {
             m_arr[i] <<= 1;
-            m_arr[i] &= (m_arr[i - 1] & top_bit) ? 1 : 0;
+            m_arr[i] |= (m_arr[i - 1] & top_bit) ? 1 : 0;
         }
         m_arr[0] <<= 1;
-        m_arr[0] &= in ? 1 : 0;
+        m_arr[0] |= in ? 1 : 0;
     }
 
     /// Shifts all elements down one index. Input is the new bit.
@@ -61,8 +63,10 @@ template <U64 n> class BitArray {
     }
 
     constexpr void print() {
+        constexpr U64 all_ones = U64(-1);
         printf("{");
-        for (I64 i = backing_size - 1; i >= 0; --i) {
+        printf("%0*llx ", U32((n % 64)/4), m_arr[backing_size - 1] & (all_ones >> (64 - (n % 64))));
+        for (I64 i = backing_size - 2; i >= 0; --i) {
             printf("%016llx ", m_arr[i]);
         }
         printf("}\n");
