@@ -2,7 +2,6 @@
 
 #include <ints.h>
 #include <stdio.h>
-#include <string>
 
 /// Helper class to store an array of bits compactly.
 /// Size n must be a multiple of 4.
