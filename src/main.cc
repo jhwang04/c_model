@@ -14,7 +14,12 @@ M-x , // Go back to where you were
 I32 main() {
     printf("Before...\n");
     BitArray<72> bitarr;
-    for (U64 i = 0; i < 72; ++i) {
-      printf("bitarr at %llu is %d\n", i, bitarr.IsBitSet(i));
-    }
+    bitarr.print();    
+    bitarr.SetBit(63);
+    bitarr.SetBit(64);
+    bitarr.print();
+    bitarr.ShiftDown(1);
+    bitarr.print();
+    bitarr.ShiftUp(1);
+    bitarr.print();
 }
