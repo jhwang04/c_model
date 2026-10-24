@@ -62,15 +62,16 @@ template <U64 n> class BitArray {
         m_arr[backing_size - 1] >>= 1;
     }
 
+    /// Helper print function.    
     constexpr void print() {
         constexpr U64 all_ones = U64(-1);
-        printf("{");
+        printf("[");
         printf("%0*llx ", U32((n % 64) / 4),
                m_arr[backing_size - 1] & (all_ones >> (64 - (n % 64))));
         for (I64 i = backing_size - 2; i >= 0; --i) {
             printf("%016llx ", m_arr[i]);
         }
-        printf("}\n");
+        printf("]\n");
     }
 
   private:
