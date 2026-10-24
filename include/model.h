@@ -18,6 +18,4 @@ struct Model {
 
     /// External reset pin.
     bool rst_n = false;
-    
 };
-    

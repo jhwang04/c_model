@@ -11,20 +11,17 @@ template <U64 width, U64 depth> class InputFifo {
     InputFifo() {
         for (U64 i = 0; i < width; ++i) {
             m_buf[i].ClearAll();
-        }        
+        }
     }
 
-    /// Re-zero the buffer when reset.    
+    /// Re-zero the buffer when reset.
     constexpr void reset() {
         for (U64 i = 0; i < width; ++i) {
             m_buf[i].ClearAll();
         }
     }
 
-    
-
   private:
-    /// Backing data structure for the two dimensional fifo.    
+    /// Backing data structure for the two dimensional fifo.
     BitArray<depth> m_buf[width];
-  
 };

@@ -7,7 +7,8 @@
 /// Size n must be a multiple of 4.
 template <U64 n> class BitArray {
     static_assert(n % 4 == 0);
- public:  
+
+  public:
     /// Guaranteed to be large enough. May have padding.
     static constexpr U64 backing_size = (n / 64) + 1;
 
@@ -16,7 +17,7 @@ template <U64 n> class BitArray {
         for (U64 i = 0; i < backing_size; ++i) {
             m_arr[i] = 0;
         }
-    }      
+    }
 
     /// Helper function to clear all bits.
     constexpr void ClearAll() {
@@ -53,7 +54,7 @@ template <U64 n> class BitArray {
 
     /// Shifts all elements down one index. Input is the new bit.
     constexpr void ShiftDown(bool in) {
-        m_arr[backing_size - 1] |= in ? 1 << (n % 64) : 0;      
+        m_arr[backing_size - 1] |= in ? 1 << (n % 64) : 0;
         for (U64 i = 0; i < backing_size - 1; ++i) {
             m_arr[i] >>= 1;
             m_arr[i] |= (m_arr[i + 1] & 0b1) ? top_bit : 0;
@@ -64,7 +65,8 @@ template <U64 n> class BitArray {
     constexpr void print() {
         constexpr U64 all_ones = U64(-1);
         printf("{");
-        printf("%0*llx ", U32((n % 64)/4), m_arr[backing_size - 1] & (all_ones >> (64 - (n % 64))));
+        printf("%0*llx ", U32((n % 64) / 4),
+               m_arr[backing_size - 1] & (all_ones >> (64 - (n % 64))));
         for (I64 i = backing_size - 2; i >= 0; --i) {
             printf("%016llx ", m_arr[i]);
         }
@@ -74,8 +76,7 @@ template <U64 n> class BitArray {
   private:
     /// Helpful mask for the top bit in a U64.
     static constexpr U64 top_bit = U64(1) << 63;
-    
-    /// Backing array.    
+
+    /// Backing array.
     U64 m_arr[backing_size];
-      
 };
