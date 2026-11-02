@@ -1,4 +1,4 @@
-#include "bitarray.h"
+#include "input_buffer.h"
 #include <stdio.h>
 
 using namespace std;
@@ -12,13 +12,5 @@ M-x , // Go back to where you were
 
 I32 main() {
     printf("Before...\n");
-    BitArray<76> bitarr;
-    bitarr.print();
-    bitarr.SetBit(63);
-    bitarr.SetBit(64);
-    bitarr.print();
-    bitarr.ShiftDown(true);
-    bitarr.print();
-    bitarr.ShiftUp(true);
-    bitarr.print();
+    
 }
