@@ -53,4 +53,3 @@ In summary, the usage instructions will be as follows:
   - Check for success by reading `uio[4]`.
 6. Serial communication will happen on `uio[3:0]`.
 
-
