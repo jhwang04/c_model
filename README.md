@@ -45,11 +45,54 @@ Desired features:
 
 In summary, the usage instructions will be as follows:
 1. Select chip using TinyTapeout MUX. This will power the chip on.
-2. Before asserting `rst_n`, shift in the program and all config regs using a pseudo-JTAG interface.
-3. Assert `rst_n` to start the program.
-4. To send data, write each byte to the SEND buffer by setting `ui_in[7:0]` and then pulsing `uio[7]`
+2. Assert `rst_n` to bring the chip out of reset.
+3. Write each program/register byte using a pseudo-JTAG interface.
+4. Send the "start" command over the "JTAG" to change the mode to RUNNING.
+5. To send data, write each byte to the SEND buffer by setting `ui_in[7:0]` and then pulsing `uio[7]`
   - Check for success by reading `uio[6]`.
-5. To receive data, pulse `uio[5]` and read `uo_out[7:0]`.
+6. To receive data, pulse `uio[5]` and read `uo_out[7:0]`.
   - Check for success by reading `uio[4]`.
-6. Serial communication will happen on `uio[3:0]`.
+7. Serial communication will happen on `uio[3:0]`.
 
+# Registers and Features
+
+### Memory
+- TX Data Buffer:
+  - 8 bits wide.
+  - Data to SEND over the serial protocol.
+  - The HOST (RP2040) is the producer.
+  - The CPU is the consumer.
+- RX Data Buffer:
+  - 8 bits wide.
+  - Data we RECEIVE from the serial protocol.
+  - The CPU is the producer.
+  - The HOST is the consumer.
+- TX Serial Buffer:
+  - 4 bits wide
+  - Reads pins `uio[3:0]`
+  - Individually-shiftable. Column-readable.
+- IMEM: Instruction memory:
+  - Width TBD. Likely need 12 or 16-bit instructions?
+    - 8 bit instructions would likely mean an even smaller address space...
+  - Depth TBD.
+- DMEM: Data RAM:
+  - Not even sure if this is necessary, with sufficiently large TX Data and RX Data buffers.
+
+### User-Interactable Registers
+- TIM: Register that decrements automatically every clock cycle. When it is 0, it resets to TIM_RST.
+  - Readable.
+  - Resettable on the fly (force to go to TIM_RST).
+  - Also writable on-the fly?
+- TIM_RST: Configurable reset value. When TIM goes to 0, it jumps back up to this.
+- INT_ENABLE: Enable hardware interrupts when `uio[0]` detects a clock edge.
+- INT_ADDR: Select which address to jump to when `uio[0]` detects a clock edge.
+- GPR: General purpose registers. Acessible by the CPU.
+  - TBD how many to have.
+  - TBD width. Probably 8 bit.
+
+### Required Registers
+- PC: Current program counter.
+- PC_NEXT: Next program counter. Either PC+1 or branch destination.
+- RET_ADD: Return address.
+
+### Instructions
