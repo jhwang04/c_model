@@ -79,20 +79,20 @@ In summary, the usage instructions will be as follows:
   - Not even sure if this is necessary, with sufficiently large TX Data and RX Data buffers.
 
 ### User-Interactable Registers
-- TIM: Register that decrements automatically every clock cycle. When it is 0, it resets to TIM_RST.
+- `TIM`: Register that decrements automatically every clock cycle. When it is 0, it resets to TIM_RST.
   - Readable.
   - Resettable on the fly (force to go to TIM_RST).
   - Also writable on-the fly?
-- TIM_RST: Configurable reset value. When TIM goes to 0, it jumps back up to this.
-- INT_ENABLE: Enable hardware interrupts when `uio[0]` detects a clock edge.
-- INT_ADDR: Select which address to jump to when `uio[0]` detects a clock edge.
-- GPR: General purpose registers. Acessible by the CPU.
+- `TIM_RST`: Configurable reset value. When TIM goes to 0, it jumps back up to this.
+- `INT_ENABLE`: Enable hardware interrupts when `uio[0]` detects a clock edge.
+- `INT_ADDR`: Select which address to jump to when `uio[0]` detects a clock edge.
+- `GPR`: General purpose registers. Acessible by the CPU.
   - TBD how many to have.
   - TBD width. Probably 8 bit.
 
 ### Required Registers
-- PC: Current program counter.
-- PC_NEXT: Next program counter. Either PC+1 or branch destination.
-- RET_ADD: Return address.
+- `PC`: Current program counter.
+- `PC_NEXT`: Next program counter. Either PC+1 or branch destination.
+- `RET_ADD`: Return address. When returning from interrupt, we simply restore `PC` to this.
 
 ### Instructions
