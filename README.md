@@ -79,20 +79,42 @@ In summary, the usage instructions will be as follows:
   - Not even sure if this is necessary, with sufficiently large TX Data and RX Data buffers.
 
 ### User-Interactable Registers
-- `TIM`: Register that decrements automatically every clock cycle. When it is 0, it resets to TIM_RST.
+- `TIME`: Register that decrements automatically every clock. When it is 0, it resets to `TIM_RST`.
   - Readable.
-  - Resettable on the fly (force to go to TIM_RST).
+  - Resettable on the fly (force to go to `TIM_RST`).
   - Also writable on-the fly?
-- `TIM_RST`: Configurable reset value. When TIM goes to 0, it jumps back up to this.
-- `INT_ENABLE`: Enable hardware interrupts when `uio[0]` detects a clock edge.
+- `TIM_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
+- `INT_EN`: Enable hardware interrupts when `uio[0]` detects a clock edge.
 - `INT_ADDR`: Select which address to jump to when `uio[0]` detects a clock edge.
+  - An interrupt will ONLY set `PC`. It will NOT set any other regs.
+  - A special return instruction will restore `PC` to its value when the interrupt fired.
 - `GPR`: General purpose registers. Acessible by the CPU.
-  - TBD how many to have.
-  - TBD width. Probably 8 bit.
+  - TBD how many to have. Maybe 4?
+  - TBD width. Maybe 12?
+- `ACC`: Accumulator register. Serves as the destination for most instructions.
 
-### Required Registers
+### Required Registers (not accessible to users)
 - `PC`: Current program counter.
 - `PC_NEXT`: Next program counter. Either PC+1 or branch destination.
 - `RET_ADD`: Return address. When returning from interrupt, we simply restore `PC` to this.
+- `INT_RUNNING`: Interrupt is currently running. Do not allow more interrupts.
 
-### Instructions
+### CPU Instructions
+For now, assume we have 8 GPRs (3 bit space) and each is 8 bits wide.
+Also assume 12 bit instructions. There is no requirement for instruction width to equal data width.
+Immediate values are 8-bits and will always use R1. All adds are unsigned for now.
+- `ADD R1, R2`: `R1 = R1 + R2`
+- `ADDI IMM`: `R1 = R1 + IMM`
+- `OR R1, R2`: `R1 = R1 | R2`
+- `ORI IMM`: `R1 = R1 | IMM`
+- `AND R1, R2`: `R1 = R1 & R2`
+- `ANDI IMM`: `R1 = R1 & IMM`
+- `SRL R1, R2`: `R1 >>= R2[2:0]`
+  - (logical, not arithmetic).
+- `SLL R1, R2`: `R1 <<= R2[2:0]`
+  - (logical, not arithmetic).
+- `SRI R1, IMM`: `R1 >>= IMM`
+  - Uses a 3-bit immediate.
+- `SLI R1, IMM`: `R1 >>= IMM`
+  - Uses a 3-bit immediate.
+- 
