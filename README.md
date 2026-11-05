@@ -68,7 +68,9 @@ In summary, the usage instructions will be as follows:
   - The CPU is the producer.
   - The HOST is the consumer.
 - TX Serial Buffer:
-  - 4 bits wide
+  - Writes to pins `uio[3:0]`.
+- RX Serial Buffer:
+  - 4 bits wide, 12(?) bits deep.
   - Reads pins `uio[3:0]`
   - Individually-shiftable. Column-readable.
 - IMEM: Instruction memory:
@@ -100,21 +102,22 @@ In summary, the usage instructions will be as follows:
 - `INT_RUNNING`: Interrupt is currently running. Do not allow more interrupts.
 
 ### CPU Instructions
-For now, assume we have 8 GPRs (3 bit space) and each is 8 bits wide.
+For now, assume we have 4 GPRs (2 bit space) and each is 12 bits wide.
 Also assume 12 bit instructions. There is no requirement for instruction width to equal data width.
-Immediate values are 8-bits and will always use R1. All adds are unsigned for now.
-- `ADD R1, R2`: `R1 = R1 + R2`
-- `ADDI IMM`: `R1 = R1 + IMM`
-- `OR R1, R2`: `R1 = R1 | R2`
-- `ORI IMM`: `R1 = R1 | IMM`
-- `AND R1, R2`: `R1 = R1 & R2`
-- `ANDI IMM`: `R1 = R1 & IMM`
-- `SRL R1, R2`: `R1 >>= R2[2:0]`
-  - (logical, not arithmetic).
-- `SLL R1, R2`: `R1 <<= R2[2:0]`
-  - (logical, not arithmetic).
-- `SRI R1, IMM`: `R1 >>= IMM`
-  - Uses a 3-bit immediate.
-- `SLI R1, IMM`: `R1 >>= IMM`
-  - Uses a 3-bit immediate.
-- 
+Immediate values are 8-bits unless specified otherwise.
+- `ADDU R1, R2`: `ACC = R1 + R2`
+- `ADDUI IMM`: `ACC += IMM`
+- `OR R1, R2`: `ACC = R1 | R2`
+- `ORI IMM`: `ACC |= IMM`
+- `AND R1, R2`: `ACC = R1 & R2`
+- `ANDI IMM`: `ACC &= IMM`
+- `SHIFT`: Secondary opcode indicates left/right and reg/imm.
+- `IN IMM`: `ACC = RX_SERIAL[IMM]`. Secondary opcode indicates LSB/MSB-first.
+- `OUT IMM`: `TX_SERIAL[IMM] = ACC`. Secondary opcode indicates LSB/MSB-first.
+- `SHIN IMM`: Shifts in `RX_SERIAL[3:0 & IMM]`.
+  - `IMM` is a bitmask!
+- `POP_TX`: `ACC = TX_DATA.pop()` (upper 4 bits are cleared).
+- `PUSH_RX`: `RX_DATA.push(ACC[7:0])`
+- `JMP IMM`: Sets PC to `IMM`.
+- `JZERO IMM` Sets PC to `IMM` if `ACC == 0`
+- `JNZ IMM` Sets PC to `IMM` if `ACC != 0`
