@@ -85,39 +85,121 @@ In summary, the usage instructions will be as follows:
   - Readable.
   - Resettable on the fly (force to go to `TIM_RST`).
   - Also writable on-the fly?
-- `TIM_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
+- `TIME_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
 - `INT_EN`: Enable hardware interrupts when `uio[0]` detects a clock edge.
+  - 10 bits wide.
+    - 1 bit EN rising edge.
+    - 1 bit EN falling edge.
+    - 4 bits IN bitmask to shift `RX_SERIAL` lanes.
+    - 4 bits OUT bitmask to shift `TX_SERIAL` lanes.
 - `INT_ADDR`: Select which address to jump to when `uio[0]` detects a clock edge.
   - An interrupt will ONLY set `PC`. It will NOT set any other regs.
   - A special return instruction will restore `PC` to its value when the interrupt fired.
 - `GPR`: General purpose registers. Acessible by the CPU.
-  - TBD how many to have. Maybe 4?
-  - TBD width. Maybe 12?
+  - 2 GPRs.
+  - 12 bits wide.
 - `ACC`: Accumulator register. Serves as the destination for most instructions.
 
 ### Required Registers (not accessible to users)
 - `PC`: Current program counter.
-- `PC_NEXT`: Next program counter. Either PC+1 or branch destination.
 - `RET_ADD`: Return address. When returning from interrupt, we simply restore `PC` to this.
 - `INT_RUNNING`: Interrupt is currently running. Do not allow more interrupts.
 
 ### CPU Instructions
-For now, assume we have 4 GPRs (2 bit space) and each is 12 bits wide.
+For now, assume we have 4 GPRs (each 12 bits wide) and 4 control regs. You may also execute any
+register operations using the special registers (`TIME`, `TIM_RST`, etc).
 Also assume 12 bit instructions. There is no requirement for instruction width to equal data width.
-Immediate values are 8-bits unless specified otherwise.
-- `ADDU R1, R2`: `ACC = R1 + R2`
+Immediate values are 8-bits unless specified otherwise, so with a 4-bit opcode, it fits in 12 bits.
+- `NOP`: Do nothing.
+  - `0000 XXXX XXXX`
+- `ADDU R1`: `ACC += R1`
+  - `0001 00 XXX R1`
+- `OR R1`: `ACC |= R1`
+  - `0001 01 XXX R1`
+- `AND R1`: `ACC &= R1`
+  - `0001 10 XXX R1`
+- `XOR R1`: `ACC ^= R2`
+  - `0001 11 XXX R1`
+- `NOT R1`: `ACC = ~R1`
+  - `0010 XX XXX R1`
 - `ADDUI IMM`: `ACC += IMM`
-- `OR R1, R2`: `ACC = R1 | R2`
+  - `0011 IMM`
 - `ORI IMM`: `ACC |= IMM`
-- `AND R1, R2`: `ACC = R1 & R2`
+  - `0100 IMM`
 - `ANDI IMM`: `ACC &= IMM`
+  - `0101 IMM`
+- `XORI IMM`: `ACC ^= IMM`
+  - `0110 IMM`
 - `SHIFT`: Secondary opcode indicates left/right and reg/imm.
+  - `0111 DIR SRC_SEL XX ARG`
+    - `DIR` is 1-bit. 0 = RIGHT, 1 = LEFT.
+	- `SRC_SEL` is 1-bit. 0 = register, 1 = immediate.
+	- `ARG[2:0]` is source reg if `SRC_SEL = 0`
+	- `ARG[3:0]` is the shift immediate if `SRC_SEL = 1`.
 - `IN IMM`: `ACC = RX_SERIAL[IMM]`. Secondary opcode indicates LSB/MSB-first.
+  - `IMM` ranges from 0 to 3.
+  - `1000 00 XXX IMM`
 - `OUT IMM`: `TX_SERIAL[IMM] = ACC`. Secondary opcode indicates LSB/MSB-first.
+  - `IMM` ranges from 0 to 3.
+  - `1000 01 XXX IMM`
 - `SHIN IMM`: Shifts in `RX_SERIAL[3:0 & IMM]`.
-  - `IMM` is a bitmask!
-- `POP_TX`: `ACC = TX_DATA.pop()` (upper 4 bits are cleared).
+  - `IMM` is a 4-bit wide bitmask.
+  - `1000 10 XX IMM`
+- `SHOUT IMM`: Shifts out `TX_SERIAL[3:0 & IMM]`.
+  - `1000 11 XX IMM`
+- `LOADI IMM`: `ACC = IMM`
+  - `1001 IMM`
+- `PUSHR R1`: `R1 = ACC`. Push register.
+  - `1010 0 XXX R1`
+- `POPR R1`: `ACC = R1`. Pop register.
+  - `1010 1 XXX R1`
+- `POP_TX`: `ACC = TX_DATA.pop()` (upper 4 bits of `ACC` are cleared).
+  - `1011 0 XXX XXXX`
 - `PUSH_RX`: `RX_DATA.push(ACC[7:0])`
+  - `1011 1 XXX XXXX`
 - `JMP IMM`: Sets PC to `IMM`.
+  - `1100 IMM`
 - `JZERO IMM` Sets PC to `IMM` if `ACC == 0`
-- `JNZ IMM` Sets PC to `IMM` if `ACC != 0`
+  - `1101 IMM`
+- `JNEG IMM` Sets PC to `IMM` if `ACC < 0 (ACC[11] == 1)`
+  - `1110 IMM`
+- `RET`: Restore PC to `RET_ADDR`
+  - `1111 XXXX XXXX`
+
+# Performance Targets
+### Branching Performance
+**Branching is always a one-cycle instruction**. On any given cycle, `PC` will hold the current PC,
+`PC_NEXT` will hold `PC + 1`, and `BRANCH_PC` will be `ACC[7:0]`. Therefore, when we decode the
+instruction and determine if the branching condition is met, both instructions will be fetched.
+p
+Also, when an interrupt fires, the current instruction does not execute. The current PC is
+saved. When RET is called, `PC` will be restored to the interrupted value on the following clock.
+
+### Target Speed
+The goal is to achieve a **60MHz clock** and to accomodate 10BASE-T ethernet. All other protocols are
+significantly slower, such that simpler "software"-based solutions should be able to easily work.
+
+### Pseudocode implementation of 10 BASE-T
+With 10 BASE-T, this means that while we are in the preamble, a rising edge/falling edge will happen
+every 6 clocks.
+
+```
+init_code:
+LOADI 11 # ACC = 11
+PUSHR TIME_RST # TIME_RST = 11
+
+preamble_pos_edge:
+POPR TIME # ACC = TIME. CLK=1(?)
+ADDUI -5 # ACC -= 5. CLK=0(?)
+JNEG end_of_preamble. CLK=11(?)
+LOADI 9 # Should wait 12 clocks total. CLK=10(?)
+PUSHR CLK # CLK=9
+
+end_of_preamble:
+LOADI payload_sample # ACC = payload_sample
+
+
+
+
+# On 
+```
