@@ -86,6 +86,7 @@ In summary, the usage instructions will be as follows:
   - Resettable on the fly (force to go to `TIM_RST`).
   - Also writable on-the fly?
 - `TIME_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
+- `TIM_INT_ADDR`: Select which address to jump to when `TIME == 0`.
 - `INT_EN`: Enable hardware interrupts when `uio[0]` detects a clock edge.
   - 10 bits wide.
     - 1 bit EN rising edge.
@@ -122,7 +123,7 @@ Immediate values are 8-bits unless specified otherwise, so with a 4-bit opcode, 
   - `0001 11 XXX R1`
 - `NOT R1`: `ACC = ~R1`
   - `0010 XX XXX R1`
-- `ADDUI IMM`: `ACC += IMM`
+- `ADDI IMM`: `ACC += IMM` (sign extended)
   - `0011 IMM`
 - `ORI IMM`: `ACC |= IMM`
   - `0100 IMM`
@@ -188,15 +189,20 @@ init_code:
 LOADI 11 # ACC = 11
 PUSHR TIME_RST # TIME_RST = 11
 
+
 preamble_pos_edge:
 POPR TIME # ACC = TIME. CLK=1(?)
-ADDUI -5 # ACC -= 5. CLK=0(?)
-JNEG end_of_preamble. CLK=11(?)
+ADDI -5 # ACC -= 5. CLK=0(?)
+JNEG still_in_preamble. CLK=11(?)
+last_preamble_bit:
+POPR R1 # R1 must hold the payload handler and both EN bits set.
+PUSHR INT_ADDR
+RET
+
+still_in_preamble:
 LOADI 9 # Should wait 12 clocks total. CLK=10(?)
 PUSHR CLK # CLK=9
-
-end_of_preamble:
-LOADI payload_sample # ACC = payload_sample
+RET
 
 
 
