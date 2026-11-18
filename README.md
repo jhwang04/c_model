@@ -68,15 +68,14 @@ In summary, the usage instructions will be as follows:
   - The CPU is the producer.
   - The HOST is the consumer.
 - TX Serial Buffer:
+
+  - 4 bits wide, 12 bits deep.
   - Writes to pins `uio[3:0]`.
 - RX Serial Buffer:
-  - 4 bits wide, 12(?) bits deep.
+  - 4 bits wide, 12 bits deep.
   - Reads pins `uio[3:0]`
-  - Individually-shiftable. Column-readable.
 - IMEM: Instruction memory:
-  - Width TBD. Likely need 12 or 16-bit instructions?
-    - 8 bit instructions would likely mean an even smaller address space...
-  - Depth TBD.
+  - 12 bits wide. 256 words (8 bit addresses).
 - DMEM: Data RAM:
   - Not even sure if this is necessary, with sufficiently large TX Data and RX Data buffers.
 
@@ -86,16 +85,9 @@ In summary, the usage instructions will be as follows:
   - Resettable on the fly (force to go to `TIM_RST`).
   - Also writable on-the fly?
 - `TIME_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
-- `TIM_INT_ADDR`: Select which address to jump to when `TIME == 0`.
-- `INT_EN`: Enable hardware interrupts when `uio[0]` detects a clock edge.
-  - 10 bits wide.
-    - 1 bit EN rising edge.
-    - 1 bit EN falling edge.
-    - 4 bits IN bitmask to shift `RX_SERIAL` lanes.
-    - 4 bits OUT bitmask to shift `TX_SERIAL` lanes.
-- `INT_ADDR`: Select which address to jump to when `uio[0]` detects a clock edge.
-  - An interrupt will ONLY set `PC`. It will NOT set any other regs.
-  - A special return instruction will restore `PC` to its value when the interrupt fired.
+- `TIME_INT_ADDR`: Select which address to jump to when `TIME == 0`.
+- `TIME_INT_EN`: 1 bit, enables/disables timer interrupts.
+- `RECV_PATTERN`
 - `GPR`: General purpose registers. Acessible by the CPU.
   - 2 GPRs.
   - 12 bits wide.
