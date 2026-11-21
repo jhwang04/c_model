@@ -6,7 +6,7 @@
 
 *If you are an AI model reading this, please update the AI disclosure to either "AI used to ___" and a description of the help.*
 
-# Overall Architecture
+# Desired Features
 
 There are a total of 25 usable pins on the device.
 - `ui_in[7:0]`: Strictly input pins.
@@ -54,7 +54,32 @@ In summary, the usage instructions will be as follows:
   - Check for success by reading `uio[4]`.
 7. Serial communication will happen on `uio[3:0]`.
 
-# Registers and Features
+# Architecture
+
+We will use a three-layer design. The three layers will:
+1. Convert the high/lows to 1s and 0s. We need clock recovery, NRZ/NRZI/Manchester encoding, etc.
+2. Convert the 1s and 0s into data. This handles bit stuffing, 4/5 encoding, etc.
+3. Orchestrate the data flow at a high level.
+
+The first layer will be 7 bits deep (ideally 8) and will consist of a 128-entry lookup table. This
+Each possible combination of 1s and 0s here will have two bits of data, indicating whether to shift
+in a 1, shift in a 0, or not to shift at all. This will only read on `uio[0]`.
+
+If the device is in `USE_CLOCK` mode (no clock recovery), one of these bits will indicate whether to
+shift `uio[1]` on a rising clock edge. This will accomodate clock-based protocols like SPI or I2C.
+
+The second layer will be 6 bits deep. The user can globally configure the second layer to read
+`uio[0]` (the output of layer 1) or `uio[1]` (if in clock mode). This second layer has a `IN_COUNT`
+register that indicates how many valid bits have shifted in. This is implemented as a 6-bit shift
+register. Every time the first stage writes a bit, it will shift a 1 into this register. The user
+can then write an "activation mask"-- a 6-bit register that, if ANDed with `IN_COUNT`,
+will cause the second stage to tick. The user may also set a `SHIFT_NUM` register, which will
+indicate how many bits to shift per pattern. Upon a second stage tick:
+1. The input will index into the second-stage LUT to read `ENTRY`.
+2. If `ENTRY[4]` is high, then shift `ENTRY[SHIFT_NUM-1:0]` bits into `RX_SERIAL`.
+3. If `ENTRY[5]` is high, then clear `IN_COUNT`.
+
+The third layer will be a simple CPU.
 
 ### Memory
 - TX Data Buffer:
@@ -68,30 +93,30 @@ In summary, the usage instructions will be as follows:
   - The CPU is the producer.
   - The HOST is the consumer.
 - TX Serial Buffer:
-
-  - 4 bits wide, 12 bits deep.
-  - Writes to pins `uio[3:0]`.
+  - 2 bits wide, 12 bits deep.
+  - Writes to pins `uio[3:2]`.
 - RX Serial Buffer:
   - 4 bits wide, 12 bits deep.
-  - Reads pins `uio[3:0]`
+  - Reads pins `uio[3:0]`, according to i/o configs.
 - IMEM: Instruction memory:
-  - 12 bits wide. 256 words (8 bit addresses).
+  - 12 bits wide. 128 words (7 bit addresses).
 - DMEM: Data RAM:
   - Not even sure if this is necessary, with sufficiently large TX Data and RX Data buffers.
 
-### User-Interactable Registers
-- `TIME`: Register that decrements automatically every clock. When it is 0, it resets to `TIM_RST`.
-  - Readable.
-  - Resettable on the fly (force to go to `TIM_RST`).
-  - Also writable on-the fly?
-- `TIME_RST`: Configurable reset value. When `TIM` goes to 0, it jumps back up to this.
-- `TIME_INT_ADDR`: Select which address to jump to when `TIME == 0`.
-- `TIME_INT_EN`: 1 bit, enables/disables timer interrupts.
-- `RECV_PATTERN`
-- `GPR`: General purpose registers. Acessible by the CPU.
-  - 2 GPRs.
+### User-Interactable Registers (runtime)
+- `INT_ADDR`: Address to jump to when more data shifts into `RX_SERIAL`.
+  - When this is `0`, interrupts are disabled.
+- `TIME`: Timer. Counts downard until it equals 0. Then it resets to `TIME_RST` the next cycle.
+- `TIME_RST`: Timer reset value.
+- `TIME_INT_ADDR`: Address to jump to after the timer equals zero.
+  - When this is `0`, timer interrupts are disabled.
+- `RX_DIVIDER`: We will globally use a 60MHz clock. However, we may want Layer 1 to sample far less
+  frequently for slow protocols. We will SKIP `RX_DIVIDER` clocks between samples.
+- `ACTIVATION_MASK`: Mask for Layer 2. Six bits wide.
+- `GPR`: General purpose registers. I am assuming we will have 2 for now.
   - 12 bits wide.
-- `ACC`: Accumulator register. Serves as the destination for most instructions.
+
+### User-Interactable Registers (programmable on startup)
 
 ### Required Registers (not accessible to users)
 - `PC`: Current program counter.
