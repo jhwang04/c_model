@@ -121,6 +121,15 @@ The third layer will be a simple CPU.
   - 12 bits wide.
 
 ### User-Interactable Registers (programmable on startup)
+- `LUT1`: Layer 1 LUT. 128 entries, each 2 bits.
+  - `LUT1[index][1]` denotes whether to shift a bit when we see this pattern.
+  - `LUT1[index][0]` indicates whether to shift a `0` or a `1` (when not in clock mode). Indicates
+    whether to shift the other three bits when in clock mode.
+- `LUT2`: Layer 2 LUT. 64 entries, each 6 bits.
+  - See above section for bit definitions.
+- `OPEN_DRAIN`: 4 bits wide. When `uio[3:0]` are configured to output mode, this denotes whether a
+  `1` will drive them to `1` or `z`. This register has no effect on pins that are configured to
+  INPUT mode.
 
 ### Required Registers (not accessible to users)
 - `PC`: Current program counter.
