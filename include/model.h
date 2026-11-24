@@ -190,7 +190,7 @@ struct Model {
     BitArray<LAYER_TWO_DEPTH> m_layer_two;
 
     /// Instruction memory.
-    U8 m_imem[IMEM_SIZE_INSTS];
+    U16 m_imem[IMEM_SIZE_INSTS];
 
     /// Instruction pointer.
     U16 m_regs[RegAddr::NUM_REGS];
@@ -213,6 +213,12 @@ struct Model {
     /// Whether an interrupt is running.
     bool m_int_running;
 
+    /// whether we're in clock mode.
+    bool m_clock_mode;
+
+    /// Whether uio[0] was previous high or low.
+    bool m_prev_uio0 = false;
+
     /// TX fifo, filled by host.
     Fifo<TX_FIFO_SIZE> m_tx_fifo;
 
@@ -231,9 +237,10 @@ struct Model {
         Model new_state = *this;
 
         // Update CPU.
-        const U16 curr_inst = m_imem[m_pc];
-        execute_instruction(new_state, curr_inst);
-        m_layer_one.ShiftUp(uio_in[0]);
+        execute_instruction(new_state, (m_imem[m_pc] & 0xFFF));
+
+        /// Update first layer.
+        update_layer1(new_state);
 
         // Update current state.
         memcpy(this, &new_state, sizeof(Model));
@@ -260,6 +267,8 @@ struct Model {
         m_ret_add = 0;
         m_acc = 0;
         m_int_running = false;
+        m_clock_mode = false;
+        m_prev_uio0 = false;
     }
 
     /// Private helper function to execute an instruction.
@@ -270,7 +279,6 @@ struct Model {
         const U16 opcode_second = (inst >> 6) & 0x3;
         const U8 imm8 = inst & 0xFF;
         const U8 imm4 = inst & 0x0F;
-        const U8 imm2 = inst & 0x03;
         const U8 r1 = inst & 0x07;
 
         switch (opcode) {
@@ -286,13 +294,11 @@ struct Model {
                 break;
 
                 case OpsNopStatus::NOP_STATUS_FIFO_STATUS:
-                U16 fifo_status = 0;
-                fifo_status =
+                new_state.m_acc =
                     (!m_rx_fifo.CanPush() << 3) |
                     (!m_rx_fifo.CanPop() << 2) |
                     (!m_tx_fifo.CanPush() << 1) |
                     (!m_tx_fifo.CanPop() << 0);
-                new_state.m_acc &= fifo_status;
                 break;
                 
                 default:
@@ -302,7 +308,147 @@ struct Model {
             break;
 
             case Opcodes::INST_ALU:
+            switch (opcode_second) {
+                case OpsALU::ALU_ADDU:
+                new_state.m_acc = (m_acc + m_regs[r1]) & 0xFFF;
+                break;
+
+                case OpsALU::ALU_OR:
+                new_state.m_acc = (m_acc | m_regs[r1]) & 0xFFF;
+                break;
+
+                case OpsALU::ALU_AND:
+                new_state.m_acc = (m_acc & m_regs[r1]) & 0xFFF;
+                break;
+
+                case OpsALU::ALU_XOR:
+                new_state.m_acc = (m_acc ^ m_regs[r1]) & 0xFFF;
+                break;
+            }
+            break;
+
+            case Opcodes::INST_NOT:
+            new_state.m_acc = ~m_regs[r1] & 0xFFF;
+            break;
+
+            case Opcodes::INST_ADDI:
+            new_state.m_acc = (m_acc + (imm8 & 0x80 ? imm8 - 0x100 : imm8)) & 0xFFF;
+            break;
+
+            case Opcodes::INST_ORI:
+            new_state.m_acc = (m_acc | imm8) & 0xFFF;
+            break;
+
+            case Opcodes::INST_ANDI:
+            new_state.m_acc = m_acc & imm8;
+            break;
+
+            case Opcodes::INST_XORI:
+            new_state.m_acc = (m_acc ^ imm8) & 0xFFF;
+            break;
+
+            case Opcodes::INST_SHIFT:
+            switch (opcode_second) {
+                case OpsShift::SHIFT_RIGHT_REG:
+                new_state.m_acc = m_regs[r1] < 12 ? (m_acc & 0xFFF) >> m_regs[r1] : 0;
+                break;
+
+                case OpsShift::SHIFT_RIGHT_IMM:
+                new_state.m_acc = (m_acc & 0xFFF) >> imm4;
+                break;
+
+                case OpsShift::SHIFT_LEFT_REG:
+                new_state.m_acc = m_regs[r1] < 12 ? (m_acc << m_regs[r1]) & 0xFFF : 0;
+                break;
+
+                case OpsShift::SHIFT_LEFT_IMM:
+                new_state.m_acc = (m_acc << imm4) & 0xFFF;
+                break;
+            }
+            break;
+
+            case Opcodes::INST_INOUT:
+            switch (opcode_second) {
+                case OpsInOut::INOUT_SHIN:
+                if (imm4 & 0x1) {
+                    new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
+                }
+                if (imm4 & 0x2) {
+                    new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
+                }
+                if (imm4 & 0x4) {
+                    new_state.m_rx_serial.shift_into_lane(2, uio_in[2]);
+                }
+                if (imm4 & 0x8) {
+                    new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
+                }
+                break;
+            }
+            break;
+
+            case Opcodes::INST_LOADI:
+            new_state.m_acc = imm8;
+            break;
+
+            case Opcodes::INST_PUSH_POP_R:
+            switch (opcode_second & 0x2) {
+                case OpsPushPopR::PUSHPOPR_PUSHR:
+                new_state.m_regs[r1] = m_acc & 0xFFF;
+                break;
+
+                case OpsPushPopR::PUSHPOPR_POPR:
+                new_state.m_acc = m_regs[r1] & 0xFFF;
+                break;
+            }
+            break;
+
+            case Opcodes::INST_PUSH_POP:
+            switch (opcode_second & 0x2) {
+                case OpsPushPop::PUSHPOP_POP_TX:
+                if (m_tx_fifo.CanPop()) {
+                    new_state.m_acc = new_state.m_tx_fifo.Pop();
+                }
+                break;
+
+                case OpsPushPop::PUSHPOP_PUSH_RX:
+                new_state.m_rx_fifo.Push(m_acc & 0xFF);
+                break;
+            }
+            break;
+
+            case Opcodes::INST_JMP:
+            new_state.m_pc = inst & 0x7F;
+            break;
+
+            case Opcodes::INST_JZERO:
+            if (m_acc == 0) {
+                new_state.m_pc = inst & 0x7F;
+            }
+            break;
+
+            case Opcodes::INST_JNEG:
+            if (m_acc & 0x800) {
+                new_state.m_pc = inst & 0x7F;
+            }
+            break;
+
+            case Opcodes::INST_RET:
+            new_state.m_pc = m_ret_add;
+            new_state.m_int_running = false;
             break;
         }
+    }
+
+    /// Private helper to update layer 1.
+    void update_layer1(Model& new_state) {
+        if (m_clock_mode && uio_in[0] && !m_prev_uio0) {
+            new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
+            new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
+            new_state.m_rx_serial.shift_into_lane(2, uio_in[2]);
+            new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
+        } else {
+            new_state.m_layer_one.ShiftUp(uio_in[0]);
+        }
+        new_state.m_prev_uio0 = uio_in[0];
     }
 };
