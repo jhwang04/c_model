@@ -73,9 +73,9 @@ shifted into it. The other three `uio` pins will shift straight into `RX_SERIAL[
 second layer altogether. This second layer has a `IN_COUNT` register that indicates how many valid
 bits have shifted in. This is implemented as a 6-bit shift register. Every time the first stage
 writes a bit, it will shift a 1 into this register. The user can then write an "activation mask"-- a
-6-bit register that, if ANDed with `IN_COUNT` (after the shift), will cause the second stage to
+6-bit register that, if ANDed with `IN_COUNT`, will cause the second stage to
 tick. The user may also set a `SHIFT_NUM` register (ranging from 1 to 4), which will indicate how
-many bits to shift per pattern. Upon a second stage tick (bit shifted in from stage 1 AND `(IN_COUNT
+many bits to shift per pattern. Upon a second stage tick (`(IN_COUNT
 & ACTIVATION_MASK) != 0`):
 1. The input will index into the second-stage LUT to read `ENTRY`.
 2. If `ENTRY[4]` is high, then shift `ENTRY[SHIFT_NUM-1:0]` bits into `RX_SERIAL`.

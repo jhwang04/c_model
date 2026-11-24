@@ -74,6 +74,11 @@ template <U64 n> class BitArray {
         printf("]\n");
     }
 
+    /// Helper function to get storage.
+    constexpr U64* GetStorage() {
+        return m_arr;
+    }
+
   private:
     /// Helpful mask for the top bit in a U64.
     static constexpr U64 top_bit = U64(1) << 63;

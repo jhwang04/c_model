@@ -225,6 +225,15 @@ struct Model {
     /// RX fifo, consumed by host.
     Fifo<RX_FIFO_SIZE> m_rx_fifo;
 
+    /// How many valid bits have shifted in.
+    BitArray<LAYER_TWO_DEPTH> m_in_count;
+
+    /// How many clocks we have waited on l1.
+    U16 m_l1_count = 0;
+
+    /// How many bits to shift in from L2.
+    U16 m_shift_count = 0;
+
     /// Simulate one step of this ASIC model. This assumes that the externally-visible pins are
     /// already set.   
     void tick() {
@@ -241,6 +250,12 @@ struct Model {
 
         /// Update first layer.
         update_layer1(new_state);
+
+        /// Update second layer.
+        bool shifted_into_layer2 = update_layer2(new_state);
+
+        /// Update RX buffer.
+        update_rx_buffer(new_state, shifted_into_layer2);
 
         // Update current state.
         memcpy(this, &new_state, sizeof(Model));
@@ -269,6 +284,8 @@ struct Model {
         m_int_running = false;
         m_clock_mode = false;
         m_prev_uio0 = false;
+        m_in_count.ClearAll();
+        m_l1_count = 0;
     }
 
     /// Private helper function to execute an instruction.
@@ -441,6 +458,12 @@ struct Model {
 
     /// Private helper to update layer 1.
     void update_layer1(Model& new_state) {
+        if (m_l1_count) {
+            new_state.m_l1_count = m_l1_count - 1;
+            return;
+        }
+        new_state.m_l1_count = m_regs[RegAddr::RX_DIVIDER] - 1;
+        
         if (m_clock_mode && uio_in[0] && !m_prev_uio0) {
             new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
             new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
@@ -450,5 +473,33 @@ struct Model {
             new_state.m_layer_one.ShiftUp(uio_in[0]);
         }
         new_state.m_prev_uio0 = uio_in[0];
+    }
+
+    /// Private helper to update layer 2. Returns whether l2 was updated or not.
+    bool update_layer2(Model& new_state) {
+        const U16 l1_reg = U16(*m_layer_one.GetStorage()) & 0x7F;
+        const L1Entry& entry = m_lut1[l1_reg];
+        if (entry.IsShiftSet()) {
+            new_state.m_layer_two.ShiftUp(entry.ShiftVal());
+            new_state.m_in_count.ShiftUp(0x1);
+            return true;
+        }
+        return false;
+    }
+
+    /// Private helper to update RX buffer.
+    void update_rx_buffer(Model& new_state, const bool shifted_in) {
+        const U16 l2_reg = U16(*m_layer_two.GetStorage()) & 0x3F;
+        const L2Entry& entry = m_lut2[l2_reg];
+        if (*m_in_count.GetStorage() & m_regs[RegAddr::ACTIVATION_MASK]) {
+            for (U64 i = m_shift_count - 1; entry.IsShiftSet() && i >= 0; --i) {
+                new_state.m_rx_serial.shift_into_lane(0, entry.GetBits() & (1 << i));
+            }
+            if (entry.IsClearSet()) {
+                // Clear in_count, but preserve the new bit from l1.
+                new_state.m_in_count.ClearAll();
+                new_state.m_in_count.ShiftUp(shifted_in);
+            }
+        }
     }
 };
