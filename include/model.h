@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fifo.h"
 #include "input_buffer.h"
 #include <utils.h>
 #include <ints.h>
@@ -9,6 +10,8 @@ constexpr U8 INPUT_BUFFER_WIDTH = 4;
 constexpr U16 IMEM_SIZE_INSTS = 128;
 constexpr U8 LAYER_ONE_DEPTH = 7;
 constexpr U8 LAYER_TWO_DEPTH = 6;
+constexpr U32 TX_FIFO_SIZE = 8;
+constexpr U32 RX_FIFO_SIZE = 8;
 
 /// Enum to index into register file.
 enum RegAddr {
@@ -210,6 +213,12 @@ struct Model {
     /// Whether an interrupt is running.
     bool m_int_running;
 
+    /// TX fifo, filled by host.
+    Fifo<TX_FIFO_SIZE> m_tx_fifo;
+
+    /// RX fifo, consumed by host.
+    Fifo<RX_FIFO_SIZE> m_rx_fifo;
+
     /// Simulate one step of this ASIC model. This assumes that the externally-visible pins are
     /// already set.   
     void tick() {
@@ -278,8 +287,12 @@ struct Model {
 
                 case OpsNopStatus::NOP_STATUS_FIFO_STATUS:
                 U16 fifo_status = 0;
-                
-                new_state.m_acc =
+                fifo_status =
+                    (!m_rx_fifo.CanPush() << 3) |
+                    (!m_rx_fifo.CanPop() << 2) |
+                    (!m_tx_fifo.CanPush() << 1) |
+                    (!m_tx_fifo.CanPop() << 0);
+                new_state.m_acc &= fifo_status;
                 break;
                 
                 default:
@@ -288,7 +301,7 @@ struct Model {
             }
             break;
 
-            case 0b0001:
+            case Opcodes::INST_ALU:
             break;
         }
     }
