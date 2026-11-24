@@ -28,7 +28,7 @@ struct L1Entry {
 
 private:
     /// Backing data structure.
-    U8 m_data;
+    const U8 m_data;
 
 public:
     /// Default constructor.
@@ -43,37 +43,37 @@ public:
     constexpr L1Entry(const U8 raw) : m_data(raw & 0b11) {}
 
     /// Getter.
-    constexpr bool IsShift() const {return m_data & 0b10;}
+    constexpr bool IsShiftSet() const {return m_data & 0b10;}
 
-    /// Setter.
-    constexpr void SetShift(bool shift) {
-        if (shift) {
-            m_data |= 0b10;
-        } else {
-            m_data &= ~0b10;
-        }
-    }
+    // /// Setter.
+    // constexpr void SetShift(const bool shift) {
+    //     if (shift) {
+    //         m_data |= 0b10;
+    //     } else {
+    //         m_data &= ~0b10;
+    //     }
+    // }
 
     /// Getter.
     constexpr U8 ShiftVal() const {return m_data & 0b1;}
 
-    /// Setter.
-    constexpr U8 SetShiftVal(U8 val) {
-        if (val) {
-            m_data |= 0b01;
-        } else {
-            m_data &= ~0b01;
-        }
-    }
+    // /// Setter.
+    // constexpr U8 SetShiftVal(const U8 val) {
+    //     if (val) {
+    //         m_data |= 0b01;
+    //     } else {
+    //         m_data &= ~0b01;
+    //     }
+    // }
 };
 
 /// Layer two entry.
 struct L2Entry {
 private:
     /// Backing data structure.
-    U8 m_data;
+    const U8 m_data;
 
-    public:
+public:
     /// Default constructor.
     constexpr L2Entry() : m_data(0) {};
 
@@ -84,9 +84,13 @@ private:
     /// @param clear Whether to clear the counter.
     /// @param shift Whether to shift on this pattern.
     /// @param bits Bits to shift.
-    constexpr 
+    constexpr L2Entry(const bool clear, const bool shift, const U8 bits) : m_data(clear ? 1<<5 : 0 | shift ? 1<<4 : 0 | bits & 0b1111) {};
 
-}
+    /// Getters.
+    constexpr bool IsClearSet() const {return m_data & 1<<5;}
+    constexpr bool IsShiftSet() const {return m_data & 1<<4;}
+    constexpr U8 GetBits() const {return m_data & 0b1111;}
+};
 
 /// Struct containing the current state of the model. In theory, all nets should
 /// be computable combinationally from the bits stored here.
@@ -126,12 +130,22 @@ struct Model {
     U16 regs[RegAddr::NUM_REGS];
 
     /// LUT for layer 1.
-    U8 lut1[1 <<  LAYER_ONE_DEPTH];
+    L1Entry lut1[1 <<  LAYER_ONE_DEPTH];
 
     /// LUT for layer 2.
-    U8 lut2[1 << LAYER_TWO_DEPTH];
+    L2Entry lut2[1 << LAYER_TWO_DEPTH];
 
-    /// Simulate one step of this ASIC model.    
+    /// Program counter.
+    U16 pc;
+
+    /// Return address.
+    U16 ret_add;
+
+    /// Whether an interrupt is running.
+    bool int_running;
+
+    /// Simulate one step of this ASIC model. This assumes that the externally-visible pins are
+    /// already set.   
     void tick() {
         if (!rst_n) {
             reset_all();
@@ -154,5 +168,10 @@ struct Model {
         layer_two.ClearAll();
         ZERO_ARRAY(imem);
         ZERO_ARRAY(regs);
+        ZERO_ARRAY(lut1);
+        ZERO_ARRAY(lut2);
+        pc = 0;
+        ret_add = 0;
+        int_running = false;
     }
 };
