@@ -23,6 +23,69 @@ enum RegAddr {
     NUM_REGS = 8
 };
 
+/// Opcode enum.
+enum Opcodes {
+    INST_NOP_STATUS = 0x0,
+    INST_ALU = 0x1,
+    INST_NOT = 0x2,
+    INST_ADDI = 0x3,
+    INST_ORI = 0x4,
+    INST_ANDI = 0x5,
+    INST_XORI = 0x6,
+    INST_SHIFT = 0x7,
+    INST_INOUT = 0x8,
+    INST_LOADI = 0x9,
+    INST_PUSH_POP_R = 0xA,
+    INST_PUSH_POP = 0xB,
+    INST_JMP = 0xC,
+    INST_JZERO = 0xD,
+    INST_JNEG = 0xE,
+    INST_RET = 0xF
+};
+
+/// Secondary opcode for NOP/Status instruction.
+enum OpsNopStatus {
+    NOP_STATUS_NOP = 0x0,
+    NOP_STATUS_DIR = 0x1,
+    NOP_STATUS_FIFO_STATUS = 0x2
+};
+
+/// Secondary opcodes for ALU instruction.
+enum OpsALU {
+    ALU_ADDU = 0x0,
+    ALU_OR = 0x1,
+    ALU_AND = 0x2,
+    ALU_XOR = 0x3
+};
+
+/// Secondary opcodes for SHIFT instruction.
+enum OpsShift {
+    SHIFT_RIGHT_REG = 0x0,
+    SHIFT_RIGHT_IMM = 0x1,
+    SHIFT_LEFT_REG = 0x2,
+    SHIFT_LEFT_IMM = 0x3
+};
+
+/// Secondary opcodes for INOUT instruction.
+enum OpsInOut {
+    INOUT_IN = 0x0,
+    INOUT_OUT = 0x1,
+    INOUT_SHIN = 0x2,
+    INOUT_SHOUT = 0x3
+};
+
+/// Secondary opcodes for PUSHR/POPR instruction.
+enum OpsPushPopR {
+    PUSHPOPR_PUSHR = 0x0,
+    PUSHPOPR_POPR = 0x2,
+};
+
+/// Secondary opcodes for PUSH/POP instruction.
+enum OpsPushPop {
+    PUSHPOP_POP_TX = 0x0,
+    PUSHPOP_PUSH_RX = 0x2,
+};
+
 /// Layer one entry.
 struct L1Entry {
 
@@ -115,34 +178,37 @@ struct Model {
 
     /// ---------- INTERNAL REGISTERS ---------- ///    
     /// Input buffer.
-    InputBuffer<INPUT_BUFFER_DEPTH, INPUT_BUFFER_WIDTH> rx_serial;
+    InputBuffer<INPUT_BUFFER_DEPTH, INPUT_BUFFER_WIDTH> m_rx_serial;
 
     /// Layer 1 register.
-    BitArray<LAYER_ONE_DEPTH> layer_one;
+    BitArray<LAYER_ONE_DEPTH> m_layer_one;
 
     /// Layer 2 register.
-    BitArray<LAYER_TWO_DEPTH> layer_two;
+    BitArray<LAYER_TWO_DEPTH> m_layer_two;
 
     /// Instruction memory.
-    U8 imem[IMEM_SIZE_INSTS];
+    U8 m_imem[IMEM_SIZE_INSTS];
 
     /// Instruction pointer.
-    U16 regs[RegAddr::NUM_REGS];
+    U16 m_regs[RegAddr::NUM_REGS];
 
     /// LUT for layer 1.
-    L1Entry lut1[1 <<  LAYER_ONE_DEPTH];
+    L1Entry m_lut1[1 <<  LAYER_ONE_DEPTH];
 
     /// LUT for layer 2.
-    L2Entry lut2[1 << LAYER_TWO_DEPTH];
+    L2Entry m_lut2[1 << LAYER_TWO_DEPTH];
 
     /// Program counter.
-    U16 pc;
+    U16 m_pc;
 
     /// Return address.
-    U16 ret_add;
+    U16 m_ret_add;
+
+    // Accumulator.
+    U16 m_acc;
 
     /// Whether an interrupt is running.
-    bool int_running;
+    bool m_int_running;
 
     /// Simulate one step of this ASIC model. This assumes that the externally-visible pins are
     /// already set.   
@@ -151,27 +217,79 @@ struct Model {
             reset_all();
             return;
         }
+        
+        // Save old state.
+        Model new_state = *this;
+
+        // Update CPU.
+        const U16 curr_inst = m_imem[m_pc];
+        execute_instruction(new_state, curr_inst);
+        m_layer_one.ShiftUp(uio_in[0]);
+
+        // Update current state.
+        memcpy(this, &new_state, sizeof(Model));
     }
 
     /// Set instruction memory.
     void load_imem(U16 (&input_mem)[IMEM_SIZE_INSTS]) {
         for (U64 i = 0; i < IMEM_SIZE_INSTS; ++i) {
-            imem[i] = input_mem[i];
+            m_imem[i] = input_mem[i];
         }
     }
     
   private:
     /// Private helper function to reset all internal registers.
     void reset_all() {
-        rx_serial.reset();
-        layer_one.ClearAll();
-        layer_two.ClearAll();
-        ZERO_ARRAY(imem);
-        ZERO_ARRAY(regs);
-        ZERO_ARRAY(lut1);
-        ZERO_ARRAY(lut2);
-        pc = 0;
-        ret_add = 0;
-        int_running = false;
+        m_rx_serial.reset();
+        m_layer_one.ClearAll();
+        m_layer_two.ClearAll();
+        ZERO_ARRAY(m_imem);
+        ZERO_ARRAY(m_regs);
+        ZERO_ARRAY(m_lut1);
+        ZERO_ARRAY(m_lut2);
+        m_pc = 0;
+        m_ret_add = 0;
+        m_acc = 0;
+        m_int_running = false;
+    }
+
+    /// Private helper function to execute an instruction.
+    void execute_instruction(Model& new_state, const U16 inst) const
+    {
+        // Four MSBs are opcode.
+        const U16 opcode = (inst >> 8) & 0xF;
+        const U16 opcode_second = (inst >> 6) & 0x3;
+        const U8 imm8 = inst & 0xFF;
+        const U8 imm4 = inst & 0x0F;
+        const U8 imm2 = inst & 0x03;
+        const U8 r1 = inst & 0x07;
+
+        switch (opcode) {
+            case Opcodes::INST_NOP_STATUS:
+            // Either NOP or status reg.
+            switch (opcode_second) {
+                case OpsNopStatus::NOP_STATUS_NOP:
+                // Do nothing.
+                break;
+
+                case OpsNopStatus::NOP_STATUS_DIR:
+                SET_REGISTER(new_state.uio_oe, 3, 0, (m_acc & 0xF));
+                break;
+
+                case OpsNopStatus::NOP_STATUS_FIFO_STATUS:
+                U16 fifo_status = 0;
+                
+                new_state.m_acc =
+                break;
+                
+                default:
+                REPORT_ERROR("Invalid secondary opcode.");
+                break;
+            }
+            break;
+
+            case 0b0001:
+            break;
+        }
     }
 };

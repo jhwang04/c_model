@@ -142,7 +142,16 @@ using the special registers (`TIME`, `TIME_RST`, etc).  Also assume 12 bit instr
 requirement for instruction width to equal data width.  Immediate values are 8-bits unless specified
 otherwise, so with a 4-bit opcode, it fits in 12 bits.
 - `NOP`: Do nothing.
-  - `0000 XXXX XXXX`
+  - `0000 XXXX 000`
+- `DIR`: Set direction of `uio[3:0]`
+  - `0000 01 XX XXXX`
+  - Set direction of `uio` pins using `ACC[3:0]`. 0 means input, 1 means output.
+- `FIFO_STATUS`: Read the FIFO register.
+  - `0000 10 XX XXXX`
+  - `ACC[0] = TX_FIFO empty`
+  - `ACC[1] = TX_FIFO full`
+  - `ACC[2] = RX_FIFO empty`
+  - `ACC[3] = RX_FIFO full`
 - `ADDU R1`: `ACC += R1`
   - `0001 00 XXX R1`
 - `OR R1`: `ACC |= R1`
