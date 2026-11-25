@@ -183,6 +183,9 @@ struct Model {
     /// Input buffer.
     InputBuffer<INPUT_BUFFER_DEPTH, INPUT_BUFFER_WIDTH> m_rx_serial;
 
+    /// Output buffer.
+    InputBuffer<INPUT_BUFFER_DEPTH, INPUT_BUFFER_WIDTH> m_tx_serial;
+
     /// Layer 1 register.
     BitArray<LAYER_ONE_DEPTH> m_layer_one;
 
@@ -287,6 +290,7 @@ struct Model {
     /// Private helper function to reset all internal registers.
     void reset_all() {
         m_rx_serial.reset();
+        m_tx_serial.reset();
         m_layer_one.ClearAll();
         m_layer_two.ClearAll();
         ZERO_ARRAY(m_imem);
@@ -318,7 +322,9 @@ struct Model {
         const U16 opcode_second = (inst >> 6) & 0x3;
         const U8 imm8 = inst & 0xFF;
         const U8 imm4 = inst & 0x0F;
+        const U8 imm2 = inst & 0x03;
         const U8 r1 = inst & 0x07;
+        const bool msb_first = inst & 0x20;
 
         switch (opcode) {
             case Opcodes::INST_NOP_STATUS:
@@ -408,6 +414,23 @@ struct Model {
 
             case Opcodes::INST_INOUT:
             switch (opcode_second) {
+                case OpsInOut::INOUT_IN:
+                new_state.m_acc = 0;
+                for (U64 i = 0; i < INPUT_BUFFER_DEPTH; ++i) {
+                    const U64 bit = msb_first ? i : INPUT_BUFFER_DEPTH - 1 - i;
+                    if (m_rx_serial.read_lane(imm2).IsBitSet(bit)) {
+                        new_state.m_acc |= 1U << i;
+                    }
+                }
+                break;
+
+                case OpsInOut::INOUT_OUT:
+                for (U64 i = 0; i < INPUT_BUFFER_DEPTH; ++i) {
+                    const U64 bit = msb_first ? INPUT_BUFFER_DEPTH - 1 - i : i;
+                    new_state.m_tx_serial.shift_into_lane(imm2, m_acc & (1U << bit));
+                }
+                break;
+
                 case OpsInOut::INOUT_SHIN:
                 if ((imm4 & 0x1) && !(shifted_lanes & 0x1)) {
                     new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
@@ -420,6 +443,15 @@ struct Model {
                 }
                 if ((imm4 & 0x8) && !(shifted_lanes & 0x8)) {
                     new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
+                }
+                break;
+
+                case OpsInOut::INOUT_SHOUT:
+                for (U64 i = 0; i < INPUT_BUFFER_WIDTH; ++i) {
+                    if (imm4 & (1U << i)) {
+                        new_state.uio_out[i] = m_tx_serial.read_lane(i).IsBitSet(INPUT_BUFFER_DEPTH - 1);
+                        new_state.m_tx_serial.shift_into_lane(i, false);
+                    }
                 }
                 break;
             }
