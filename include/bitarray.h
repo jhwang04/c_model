@@ -4,13 +4,13 @@
 #include <stdio.h>
 
 /// Helper class to store an array of bits compactly.
-/// Size n must be a multiple of 4.
+/// Size n must be positive.
 template <U64 n> class BitArray {
-    static_assert(n % 4 == 0);
+    static_assert(n > 0);
 
   public:
     /// Guaranteed to be large enough. May have padding.
-    static constexpr U64 backing_size = (n / 64) + 1;
+    static constexpr U64 backing_size = (n + 63) / 64;
 
     /// Public-facing constructor. Zero-inits backing array.
     BitArray() {
@@ -50,25 +50,28 @@ template <U64 n> class BitArray {
         }
         m_arr[0] <<= 1;
         m_arr[0] |= in ? 1 : 0;
+        if constexpr (n % 64 != 0) {
+            m_arr[backing_size - 1] &= (U64(1) << (n % 64)) - 1;
+        }
     }
 
     /// Shifts all elements down one index. Input is the new bit.
     constexpr void ShiftDown(bool in) {
-        m_arr[backing_size - 1] |= in ? 1 << (n % 64) : 0;
         for (U64 i = 0; i < backing_size - 1; ++i) {
             m_arr[i] >>= 1;
             m_arr[i] |= (m_arr[i + 1] & 0b1) ? top_bit : 0;
         }
         m_arr[backing_size - 1] >>= 1;
+        m_arr[backing_size - 1] |= in ? U64(1) << ((n - 1) % 64) : 0;
     }
 
     /// Helper print function.    
     constexpr void print() {
         constexpr U64 all_ones = U64(-1);
         printf("[");
-        printf("%0*llx ", U32((n % 64) / 4),
-               m_arr[backing_size - 1] & (all_ones >> (64 - (n % 64))));
-        for (I64 i = backing_size - 2; i >= 0; --i) {
+        printf("%0*llx ", int((((n - 1) % 64) + 4) / 4),
+               m_arr[backing_size - 1] & (all_ones >> ((64 - (n % 64)) % 64)));
+        for (I64 i = I64(backing_size) - 2; i >= 0; --i) {
             printf("%016llx ", m_arr[i]);
         }
         printf("]\n");

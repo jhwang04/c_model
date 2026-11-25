@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+#include <cstring>
+#include <cstdio>
 #include "ints.h"
 
 /// Helper macro to memset an array to zero.
-#define ZERO_ARRAY(arr) memset(arr, 0, sizeof(arr) * sizeof(arr[0]));
+#define ZERO_ARRAY(arr) std::memset(arr, 0, sizeof(arr))
 
 /// Helper to set a register. Upper/lower bounds are inclusive. The idea is to be similar to verilog colon notation.
 /// The user is responsible for ensuring bounds are not violated.
@@ -24,7 +26,7 @@ static constexpr void SET_REGISTER(U8* reg, const U32 upper_bound, const U32 low
 }
 
 /// Helper to report an error.
-static constexpr void REPORT_ERROR(const std::string& err) {
+static inline void REPORT_ERROR(const std::string& err) {
     printf("ERROR: ");
     printf("%s\n", err.c_str());
 }

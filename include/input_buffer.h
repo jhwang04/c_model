@@ -10,7 +10,7 @@ template <U64 depth, U64 width> class InputBuffer {
     static_assert(width <= 64);
 
     /// Default zero the buffer.
-    InputBuffer8() {
+    InputBuffer() {
         for (U64 i = 0; i < width; ++i) {
             m_buf[i].ClearAll();
         }

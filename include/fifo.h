@@ -21,16 +21,17 @@ public:
         m_backing_arr[m_front] = val;
         m_front = (m_front + 1) % capacity;
         m_size++;
+        return true;
     }
 
     /// Whether we can pop.
     bool CanPop() const {
-        m_size > 0;
+        return m_size > 0;
     }
 
     /// Whether we can push.
     bool CanPush() const {
-        m_size < capacity;
+        return m_size < capacity;
     }
 
     /// Empties fifo.

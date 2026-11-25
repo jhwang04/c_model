@@ -94,7 +94,7 @@ struct L1Entry {
 
 private:
     /// Backing data structure.
-    const U8 m_data;
+    U8 m_data;
 
 public:
     /// Default constructor.
@@ -137,7 +137,7 @@ public:
 struct L2Entry {
 private:
     /// Backing data structure.
-    const U8 m_data;
+    U8 m_data;
 
 public:
     /// Default constructor.
@@ -150,7 +150,7 @@ public:
     /// @param clear Whether to clear the counter.
     /// @param shift Whether to shift on this pattern.
     /// @param bits Bits to shift.
-    constexpr L2Entry(const bool clear, const bool shift, const U8 bits) : m_data(clear ? 1<<5 : 0 | shift ? 1<<4 : 0 | bits & 0b1111) {};
+    constexpr L2Entry(const bool clear, const bool shift, const U8 bits) : m_data((clear ? 1<<5 : 0) | (shift ? 1<<4 : 0) | (bits & 0b1111)) {};
 
     /// Getters.
     constexpr bool IsClearSet() const {return m_data & 1<<5;}
@@ -231,8 +231,11 @@ struct Model {
     /// How many clocks we have waited on l1.
     U16 m_l1_count = 0;
 
+    /// Whether layer 1 holds a new sample.
+    bool m_l1_valid = false;
+
     /// How many bits to shift in from L2.
-    U16 m_shift_count = 0;
+    U16 m_shift_count = 1;
 
     /// Simulate one step of this ASIC model. This assumes that the externally-visible pins are
     /// already set.   
@@ -245,20 +248,32 @@ struct Model {
         // Save old state.
         Model new_state = *this;
 
-        // Update CPU.
-        execute_instruction(new_state, (m_imem[m_pc] & 0xFFF));
+        new_state.m_pc = (m_pc + 1) & 0x7F;
+        new_state.m_regs[RegAddr::TIME] =
+            (m_regs[RegAddr::TIME] ? m_regs[RegAddr::TIME] - 1 : m_regs[RegAddr::TIME_RST]) & 0xFFF;
 
-        /// Update first layer.
-        update_layer1(new_state);
+        // Clock mode shifts lanes 1-3 directly and bypasses layer 2.
+        U8 shifted_lanes = update_layer1(new_state) ? 0xE : 0;
+        if (!m_clock_mode) {
+            bool shifted_into_layer2 = update_layer2(new_state);
+            update_rx_buffer(new_state, shifted_into_layer2);
+            if ((*m_in_count.GetStorage() & m_regs[RegAddr::ACTIVATION_MASK] & 0x3F) &&
+                m_lut2[U16(*m_layer_two.GetStorage()) & 0x3F].IsShiftSet()) {
+                shifted_lanes = 0x1;
+            }
+        }
 
-        /// Update second layer.
-        bool shifted_into_layer2 = update_layer2(new_state);
-
-        /// Update RX buffer.
-        update_rx_buffer(new_state, shifted_into_layer2);
+        // Interrupts suppress the current instruction and resume it after RET.
+        if (shifted_lanes && (m_regs[RegAddr::INT_ADDR] & 0x7F) && !m_int_running) {
+            new_state.m_ret_add = m_pc;
+            new_state.m_pc = m_regs[RegAddr::INT_ADDR] & 0x7F;
+            new_state.m_int_running = true;
+        } else {
+            execute_instruction(new_state, (m_imem[m_pc] & 0xFFF), shifted_lanes);
+        }
 
         // Update current state.
-        memcpy(this, &new_state, sizeof(Model));
+        *this = new_state;
     }
 
     /// Set instruction memory.
@@ -286,10 +301,17 @@ struct Model {
         m_prev_uio0 = false;
         m_in_count.ClearAll();
         m_l1_count = 0;
+        m_l1_valid = false;
+        m_shift_count = 1;
+        m_tx_fifo.Clear();
+        m_rx_fifo.Clear();
+        ZERO_ARRAY(uio_out);
+        ZERO_ARRAY(uio_oe);
+        ZERO_ARRAY(u_out);
     }
 
     /// Private helper function to execute an instruction.
-    void execute_instruction(Model& new_state, const U16 inst) const
+    void execute_instruction(Model& new_state, const U16 inst, const U8 shifted_lanes) const
     {
         // Four MSBs are opcode.
         const U16 opcode = (inst >> 8) & 0xF;
@@ -387,16 +409,16 @@ struct Model {
             case Opcodes::INST_INOUT:
             switch (opcode_second) {
                 case OpsInOut::INOUT_SHIN:
-                if (imm4 & 0x1) {
+                if ((imm4 & 0x1) && !(shifted_lanes & 0x1)) {
                     new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
                 }
-                if (imm4 & 0x2) {
+                if ((imm4 & 0x2) && !(shifted_lanes & 0x2)) {
                     new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
                 }
-                if (imm4 & 0x4) {
+                if ((imm4 & 0x4) && !(shifted_lanes & 0x4)) {
                     new_state.m_rx_serial.shift_into_lane(2, uio_in[2]);
                 }
-                if (imm4 & 0x8) {
+                if ((imm4 & 0x8) && !(shifted_lanes & 0x8)) {
                     new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
                 }
                 break;
@@ -456,27 +478,34 @@ struct Model {
         }
     }
 
-    /// Private helper to update layer 1.
-    void update_layer1(Model& new_state) {
+    /// Update layer 1. Returns whether clock mode shifted RX lanes 1-3.
+    bool update_layer1(Model& new_state) {
+        new_state.m_l1_valid = false;
         if (m_l1_count) {
             new_state.m_l1_count = m_l1_count - 1;
-            return;
+            return false;
         }
-        new_state.m_l1_count = m_regs[RegAddr::RX_DIVIDER] - 1;
-        
-        if (m_clock_mode && uio_in[0] && !m_prev_uio0) {
-            new_state.m_rx_serial.shift_into_lane(0, uio_in[0]);
-            new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
-            new_state.m_rx_serial.shift_into_lane(2, uio_in[2]);
-            new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
-        } else {
-            new_state.m_layer_one.ShiftUp(uio_in[0]);
-        }
+        new_state.m_l1_count = m_regs[RegAddr::RX_DIVIDER] & 0xFFF;
         new_state.m_prev_uio0 = uio_in[0];
+        if (m_clock_mode) {
+            if (uio_in[0] && !m_prev_uio0) {
+                new_state.m_rx_serial.shift_into_lane(1, uio_in[1]);
+                new_state.m_rx_serial.shift_into_lane(2, uio_in[2]);
+                new_state.m_rx_serial.shift_into_lane(3, uio_in[3]);
+                return true;
+            }
+            return false;
+        }
+        new_state.m_layer_one.ShiftUp(uio_in[0]);
+        new_state.m_l1_valid = true;
+        return false;
     }
 
     /// Private helper to update layer 2. Returns whether l2 was updated or not.
     bool update_layer2(Model& new_state) {
+        if (!m_l1_valid) {
+            return false;
+        }
         const U16 l1_reg = U16(*m_layer_one.GetStorage()) & 0x7F;
         const L1Entry& entry = m_lut1[l1_reg];
         if (entry.IsShiftSet()) {
@@ -491,9 +520,9 @@ struct Model {
     void update_rx_buffer(Model& new_state, const bool shifted_in) {
         const U16 l2_reg = U16(*m_layer_two.GetStorage()) & 0x3F;
         const L2Entry& entry = m_lut2[l2_reg];
-        if (*m_in_count.GetStorage() & m_regs[RegAddr::ACTIVATION_MASK]) {
-            for (U64 i = m_shift_count - 1; entry.IsShiftSet() && i >= 0; --i) {
-                new_state.m_rx_serial.shift_into_lane(0, entry.GetBits() & (1 << i));
+        if (*m_in_count.GetStorage() & m_regs[RegAddr::ACTIVATION_MASK] & 0x3F) {
+            for (U64 i = m_shift_count; entry.IsShiftSet() && i > 0; --i) {
+                new_state.m_rx_serial.shift_into_lane(0, entry.GetBits() & (1U << (i - 1)));
             }
             if (entry.IsClearSet()) {
                 // Clear in_count, but preserve the new bit from l1.

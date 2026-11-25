@@ -1,4 +1,4 @@
-#include "input_buffer.h"
+#include "model.h"
 #include <stdio.h>
 
 using namespace std;
